@@ -15,14 +15,14 @@ function upsert!(t::BlockTransaction,subkey::Bytes,value::Bytes)
 end
 
 type Transaction
-    bucket::ASCIIString
-    space::ASCIIString
-    tables::Dict{ASCIIString,Dict{Bytes,BlockTransaction}}
+    bucket::UTF8String
+    space::UTF8String
+    tables::Dict{UTF8String,Dict{Bytes,BlockTransaction}}
 end
 
-Transaction(bucket,space)=Transaction(bucket,space,Dict{ASCIIString,Dict{Bytes,BlockTransaction}}())
+Transaction(bucket,space)=Transaction(bucket,space,Dict{UTF8String,Dict{Bytes,BlockTransaction}}())
 
-function upsert!(t::Transaction,table::ASCIIString,key::Bytes,subkey::Bytes,value::Bytes)
+function upsert!(t::Transaction,table::UTF8String,key::Bytes,subkey::Bytes,value::Bytes)
     if !(haskey(t.tables,table))
         t.tables[table]=Dict{Bytes,BlockTransaction}()
     end
