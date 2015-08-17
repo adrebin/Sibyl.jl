@@ -5,7 +5,7 @@ using Zlib
 using AWS
 using AWS.S3
 
-export asbytes
+export asbytes,frombytes
 export empty
 
 typealias Bytes Array{UInt8,1}
@@ -34,6 +34,16 @@ function asbytes(xs...)
         writebytes(io,x)
     end
     return takebuf_array(io)
+end
+
+fromio(io,::Type{Val{Int64}})=read(io,Int64)
+fromio(io,::Type{Val{Float64}})=read(io,Float64)
+
+function frombytes(b::Bytes,typ...)
+    io=IOBuffer()
+    write(io,b)
+    seekstart(io)
+    [fromio(io,Val{t}) for t in typ]
 end
 
 type BlockTransaction
@@ -165,7 +175,20 @@ function readblock(env,bucket::UTF8String,space::UTF8String,table::UTF8String,ke
     return r
 end
 
-
+function loadblocks!(env,t::Transaction,tablekeys)
+    results=[]
+    @sync for (table,key) in tablekeys
+        r=RemoteRef()
+        push!(results,r)
+        @async put!(r,readblock(env,t.bucket,t.space,table,key))
+    end
+    for i=1:length(tablekeys)
+        if !haskey(t.tables,tablekeys[i][1])
+            t.tables[tablekeys[i][1]]=Dict{Bytes,BlockTransaction}()
+        end
+        t.tables[tablekeys[i][1]][tablekeys[i][2]]=fetch(results[i])
+    end
+end
 
 end
 
