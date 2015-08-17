@@ -12,40 +12,55 @@ typealias Bytes Array{UInt8,1}
 
 const empty=Bytes()
 
-function readstring(io)
-    l=read(io,Int16)
-    return UTF8String(read(io,Uint8,l))
+function writebytes(io,xs...)
+    for x in xs
+        if typeof(x)<:AbstractString
+            b=IOBuffer()
+            write(b,UTF8String(x))
+            b=takebuf_array(b)
+            write(io,Int16(length(b)))
+            write(io,b)
+        elseif typeof(x)<:Array
+            b=reinterpret(UInt8,x)
+            write(io,Int64(length(b)))
+            write(io,b)
+        else
+            write(io,x)
+        end
+    end
 end
 
-function writebytes(io,x::String)
-    b=IOBuffer()
-    write(b,UTF8String(x))
-    b=takebuf_array(b)
-    write(io,Int16(length(b)))
-    write(io,b)
-end
+frombytesarray{T}(data::Bytes,typ::Type{Array{T,1}})=reinterpret(T,data)
 
-writebytes(io,x::Int64)=write(io,x)
-writebytes(io,x::Float64)=write(io,x)
+function readbytes(io,typs...)
+    r=[]
+    for typ in typs
+        if typ==UTF8String
+            l=read(io,Int16)
+            b=read(io,UInt8,l)
+            push!(r,UTF8String(b))
+        elseif typ<:Array
+            l=read(io,Int64)
+            b=read(io,UInt8,l)
+            push!(r,frombytesarray(b,typ))
+        else
+            push!(r,read(io,typ))
+        end
+    end
+    return r
+end
 
 function asbytes(xs...)
     io=IOBuffer()
-    for x in xs
-        writebytes(io,x)
-    end
+    writebytes(io,xs...)
     return takebuf_array(io)
 end
 
-fromio(io,::Type{Val{Int64}})=read(io,Int64)
-fromio(io,::Type{Val{Float64}})=read(io,Float64)
-
-function frombytes(b::Bytes,typ...)
-    io=IOBuffer()
-    write(io,b)
-    seekstart(io)
-    [fromio(io,Val{t}) for t in typ]
+function frombytes(data,typs...)
+    io=IOBuffer(data)
+    return readbytes(io,typs...)
 end
-
+    
 type BlockTransaction
     data::Dict{Bytes,Bytes}
     deleted::Set{Bytes}
@@ -61,19 +76,15 @@ end
 
 function message(t::BlockTransaction)
     io=IOBuffer()
-    write(io,Int64(length(keys(t.data))))
+    writebytes(io,Int64(length(keys(t.data))))
     for (k,v) in t.data
-        write(io,Int64(length(k)))
-        write(io,k)
-        write(io,Int64(length(v)))
-        write(io,v)
+        writebytes(io,k,v)
     end
-    write(io,Int64(length(t.deleted)))
+    writebytes(io,Int64(length(t.deleted)))
     for k in t.deleted
-        write(io,Int64(length(k)))
-        write(io,k)
+        writebytes(io,k)
     end
-    write(io,Int64(length(t.s3keystodelete)))
+    writebytes(io,Int64(length(t.s3keystodelete)))
     for s in t.s3keystodelete
         writebytes(io,s)
     end
@@ -85,26 +96,19 @@ function interpret!(t::BlockTransaction,message::Bytes)
     if length(message)==0
         return
     end
-    io=IOBuffer()
-    write(io,Zlib.decompress(message))
-    seekstart(io)
-    n=read(io,Int64)
+    io=IOBuffer(Zlib.decompress(message))
+    n=readbytes(io,Int64)[1]
     for i=1:n
-        kl=read(io,Int64)
-        k=read(io,Uint8,kl)
-        vl=read(io,Int64)
-        v=read(io,Uint8,vl)
-        t.data[k]=v
+        x=readbytes(io,Bytes,Bytes)
+        t.data[x[1]]=x[2]
     end
-    n=read(io,Int64)
+    n=readbytes(io,Int64)[1]
     for i=1:n
-        kl=read(io,Int64)
-        k=read(io,Uint8,kl)
-        delete!(t.data,k)
+        delete!(t.data,readbytes(io,Bytes))
     end
-    n=read(io,Int64)
+    n=readbytes(io,Int64)[1]
     for i=1:n
-        push!(t.s3keystodelete,readstring(io))
+        push!(t.s3keystodelete,readbytes(io,UTF8String)[1])
     end
 end
 
