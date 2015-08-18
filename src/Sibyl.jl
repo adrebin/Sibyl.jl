@@ -9,13 +9,17 @@ using Memcache
 export asbytes,frombytes
 export empty
 
+type NoCache
+end
+
 type Connection
     bucket::UTF8String
     space::UTF8String
     env::AWSEnv
+    cache
 end
 
-Connection(bucket,space)=Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0))
+Connection(bucket,space)=Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0),NoCache())
 
 typealias Bytes Array{UInt8,1}
 
@@ -157,12 +161,12 @@ function save(t::Transaction)
     end
 end
 
-function s3listobjects(env,bucket,prefix)
-    [x.key for x in S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix)).obj.contents]
+function s3listobjects(connection,prefix)
+    [x.key for x in S3.get_bkt(connection.env,connection.bucket,options=GetBucketOptions(prefix=prefix)).obj.contents]
 end
 
-function s3getobject(env,bucket,s3key)
-    resp=S3.get_object(env,bucket,s3key)
+function s3getobject(connection,s3key)
+    resp=S3.get_object(connection.env,connection.bucket,s3key)
     if resp.http_code==200
         return takebuf_array(resp.obj)
     end
@@ -172,13 +176,13 @@ end
 function readblock(connection::Connection,table::UTF8String,key::Bytes)
     objects=[(frombytes(base64decode(ASCIIString(split(x,",")[5])),Int64)[1],
               split(x,",")[6],x)
-             for x in s3listobjects(connection.env,connection.bucket,s3keyprefix(connection.space,table,key))]
+             for x in s3listobjects(connection,s3keyprefix(connection.space,table,key))]
     sort!(objects)
     results=[]
     @sync for obj in objects
         r=RemoteRef()
         push!(results,r)
-        @async put!(r,s3getobject(connection.env,connection.bucket,obj[3]))
+        @async put!(r,s3getobject(connection,obj[3]))
     end
     r=BlockTransaction()
     for result in results
