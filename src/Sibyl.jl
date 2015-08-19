@@ -169,7 +169,7 @@ end
 
 Transaction(connection)=Transaction(connection,Dict{UTF8String,Dict{Bytes,BlockTransaction}}())
 
-function upsert!(t::Transaction,table::UTF8String,key::Bytes,subkey::Bytes,value::Bytes)
+function upsert!(t::Transaction,table::String,key::Bytes,subkey::Bytes,value::Bytes)
     if !(haskey(t.tables,table))
         t.tables[table]=Dict{Bytes,BlockTransaction}()
     end
@@ -220,7 +220,7 @@ function s3getobject(connection,s3key)
     return empty
 end
 
-function readblock(connection::Connection,table::UTF8String,key::Bytes)
+function readblock(connection::Connection,table::String,key::Bytes)
     cache=getcacheconnection(connection.cache)
     objects=[(frombytes(base64decode(ASCIIString(split(x,",")[5])),Int64)[1],
               split(x,",")[6],x)
