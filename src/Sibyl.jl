@@ -6,6 +6,8 @@ using AWS
 using AWS.S3
 import Memcache
 
+include("base62.jl")
+
 export asbytes,frombytes
 export empty
 
@@ -107,6 +109,7 @@ function asbytes(xs...)
 end
 
 function frombytes(data,typs...)
+    println(data)
     io=IOBuffer(data)
     return readbytes(io,typs...)
 end
@@ -193,6 +196,7 @@ function save(t::Transaction)
             s3key="$(s3prefix),$(timestamp),$(sha256(m))"
             @async begin
                 S3.put_object(t.connection.env,t.connection.bucket,s3key,ASCIIString(m))
+                println(s3key)
             end
         end
     end
@@ -209,6 +213,7 @@ function s3listobjects(cache,connection,prefix)
     end
     r=[x.key for x in S3.get_bkt(connection.env,connection.bucket,options=GetBucketOptions(prefix=prefix)).obj.contents]
     putcached!(cache,cachekey,asbytes(Int64(length(r)),r...),exptime=120) # lists expire after 2 minutes.
+    println(r)
     return r
 end
 
