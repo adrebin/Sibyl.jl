@@ -4,7 +4,6 @@ using SHA
 using Zlib
 using AWS
 using AWS.S3
-import Memcache
 
 include("base62.jl")
 
@@ -14,55 +13,13 @@ export empty
 typealias Bytes Array{UInt8,1}
 const empty=Bytes()
 
-
-type LocalMemCache
-end
-
-type LocalMemCacheConnection
-    client
-end
-
-function getcacheconnection(::LocalMemCache)
-    return LocalMemCacheConnection(Memcache.MemcacheClient("localhost", 11211))
-end
-
-function destroycacheconnection(c::LocalMemCacheConnection)
-    close(c.client.sock)
-end
-
-function getcached(c::LocalMemCacheConnection,k::Bytes)
-    mk=SHA.sha256(k)
-    try
-        check,v=Memcache.get(c.client,mk)
-        if check==SHA.sha256([k;v])
-            return v
-        else
-            return empty
-        end
-    catch
-        return empty
-    end
-end
-
-function putcached!(c::LocalMemCacheConnection,k::Bytes,v::Bytes;exptime=0)
-    mk=SHA.sha256(k)
-    check=SHA.sha256([k;v])
-    try
-        Memcache.set(c.client,mk,(check,v),exptime=exptime)
-    catch
-    end
-end
-
-    
 type Connection
     bucket::UTF8String
     space::UTF8String
     env::AWSEnv
-    cache
 end
 
-Connection(bucket,space)=Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0),LocalMemCache())
-
+Connection(bucket,space)=Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0))
 
 function writebytes(io,xs...)
     for x in xs
@@ -109,7 +66,6 @@ function asbytes(xs...)
 end
 
 function frombytes(data,typs...)
-    println(data)
     io=IOBuffer(data)
     return readbytes(io,typs...)
 end
@@ -183,8 +139,8 @@ function upsert!(t::Transaction,table::AbstractString,key::Bytes,subkey::Bytes,v
 end
 
 function s3keyprefix(space,table,key)
-    base=",$(space),$(table),$(base64encode(key))"
-    sha256(base)[1:4]*base
+    hash=sha256(key)[1:4]
+    return "$(space)/$(table)/$(hash)/$(Base62.encode(key))"
 end
 
 function save(t::Transaction)
@@ -192,28 +148,18 @@ function save(t::Transaction)
         for (key,blocktransaction) in blocktransactions
             s3prefix=s3keyprefix(t.connection.space,table,key)
             m=message(blocktransaction)
-            timestamp=base64encode(asbytes(Int64(round(time()))))
-            s3key="$(s3prefix),$(timestamp),$(sha256(m))"
+            timestamp=Base62.encode(asbytes(Int64(round(time()))))
+            nonce=Base62.encode(hex2bytes(sha256(m)))
+            s3key="$(s3prefix)/$(timestamp)/$(nonce)"
             @async begin
                 S3.put_object(t.connection.env,t.connection.bucket,s3key,ASCIIString(m))
-                println(s3key)
             end
         end
     end
 end
 
-function s3listobjects(cache,connection,prefix)
-    cachekey=asbytes(connection.bucket,prefix)
-    b=getcached(cache,cachekey)
-    if length(b)>0
-        io=IOBuffer(b)
-        n=readbytes(io,Int64)[1]
-        r=[readbytes(io,UTF8String)[1] for i=1:n]
-        return r
-    end
+function s3listobjects(connection,prefix)
     r=[x.key for x in S3.get_bkt(connection.env,connection.bucket,options=GetBucketOptions(prefix=prefix)).obj.contents]
-    putcached!(cache,cachekey,asbytes(Int64(length(r)),r...),exptime=120) # lists expire after 2 minutes.
-    println(r)
     return r
 end
 
@@ -226,31 +172,25 @@ function s3getobject(connection,s3key)
 end
 
 function readblock(connection::Connection,table::AbstractString,key::Bytes)
-    cache=getcacheconnection(connection.cache)
-    objects=[(frombytes(base64decode(ASCIIString(split(x,",")[5])),Int64)[1],
-              split(x,",")[6],x)
-             for x in s3listobjects(cache,connection,s3keyprefix(connection.space,table,key))]
+    objects=[(frombytes(Base62.decode(ASCIIString(split(x,"/")[5])),Int64)[1],
+              split(x,"/")[6],x)
+             for x in s3listobjects(connection,s3keyprefix(connection.space,table,key))]
     sort!(objects)
     results=[]
     fetchindicies=Int[]
     @sync for i=1:length(objects)
-        r=getcached(cache,asbytes(connection.bucket,objects[i][3]))
-        if length(r)==0
-            push!(fetchindicies,i)
-            r=RemoteRef()
-            @async put!(r,s3getobject(connection,objects[i][3]))
-        end
+        push!(fetchindicies,i)
+        r=RemoteRef()
+        @async put!(r,s3getobject(connection,objects[i][3]))
         push!(results,r)
     end
     for i in fetchindicies
         results[i]=fetch(results[i])
-        putcached!(cache,asbytes(connection.bucket,objects[i][3]),results[i])
     end
     r=BlockTransaction()
     for result in results
         interpret!(r,result)
     end
-    destroycacheconnection(cache)
     return r
 end
 
