@@ -13,13 +13,42 @@ export empty
 typealias Bytes Array{UInt8,1}
 const empty=Bytes()
 
+type GlobalEnvironment
+    awsenv::Nullable{AWSEnv}
+    connections::Base.Semaphore
+end
+
+function __init__()
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128))
+end
+
+function getnewawsenv()
+    global globalenv::GlobalEnvironment
+    if haskey(ENV,"AWS_ID")
+        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(id=ENV["AWS_ID"],key=ENV["AWS_SECKEY"]))
+    else
+        globalenv.awsenv=Nullavle{AWSEnv}(AWSEnv(ec2_creds=true))
+    end
+    return get(globalenv.awsenv)
+end
+
+function getawsenv()
+    global globalenv::GlobalEnvironment
+    if isnull(globalenv.awsenv)
+        return getnewawsenv()
+    end
+    return get(globalenv.awsenv)
+end
+
 type Connection
     bucket::UTF8String
     space::UTF8String
     env::AWSEnv
 end
 
-Connection(bucket,space)=Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0))
+function Connection(bucket,space)
+    Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0))
+end
 
 function writebytes(io,xs...)
     for x in xs
