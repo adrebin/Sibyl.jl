@@ -15,7 +15,7 @@ const empty=Bytes()
 
 type GlobalEnvironment
     awsenv::Nullable{AWSEnv}
-    connections::Base.Semaphore
+    s3connections::Base.Semaphore
 end
 
 function __init__()
@@ -40,14 +40,23 @@ function getawsenv()
     return get(globalenv.awsenv)
 end
 
+function acquires3connection()
+    global globalenv::GlobalEnvironment
+    Base.acquire(globalenv.s3connections)
+end
+
+function releases3connection()
+    global globalenv::GlobalEnvironment
+    Base.release(globalenv.s3connections)
+end
+
 type Connection
     bucket::UTF8String
     space::UTF8String
-    env::AWSEnv
 end
 
 function Connection(bucket,space)
-    Connection(UTF8String(bucket),UTF8String(space),AWSEnv(timeout=60.0))
+    Connection(UTF8String(bucket),UTF8String(space))
 end
 
 function writebytes(io,xs...)
@@ -181,19 +190,29 @@ function save(t::Transaction)
             nonce=Base62.encode(hex2bytes(sha256(m)))
             s3key="$(s3prefix)/$(timestamp)/$(nonce)"
             @async begin
-                S3.put_object(t.connection.env,t.connection.bucket,s3key,ASCIIString(m))
+                acquires3connection()
+                env=getawsenv()
+                S3.put_object(env,t.connection.bucket,s3key,ASCIIString(m))
+                releases3connection()
             end
         end
     end
 end
 
 function s3listobjects(connection,prefix)
-    r=[x.key for x in S3.get_bkt(connection.env,connection.bucket,options=GetBucketOptions(prefix=prefix)).obj.contents]
+    acquires3connection()
+    env=getawsenv()
+    list=S3.get_bkt(env,connection.bucket,options=GetBucketOptions(prefix=prefix)).obj.contents
+    releases3connection()
+    r=[x.key for x in list]
     return r
 end
 
 function s3getobject(connection,s3key)
-    resp=S3.get_object(connection.env,connection.bucket,s3key)
+    acquires3connection()
+    env=getawsenv()
+    resp=S3.get_object(env,connection.bucket,s3key)
+    releases3connection()
     if resp.http_code==200
         return takebuf_array(resp.obj)
     end
@@ -207,9 +226,9 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
     sort!(objects)
     results=[]
     fetchindicies=Int[]
-    @sync for i=1:length(objects)
+    for i=1:length(objects)
         push!(fetchindicies,i)
-        r=RemoteRef()
+        r=Future()
         @async put!(r,s3getobject(connection,objects[i][3]))
         push!(results,r)
     end
@@ -225,8 +244,8 @@ end
 
 function loadblocks!(t::Transaction,tablekeys)
     results=[]
-    @sync for (table,key) in tablekeys
-        r=RemoteRef()
+    for (table,key) in tablekeys
+        r=Future()
         push!(results,r)
         @async put!(r,readblock(t.connection,table,key))
     end
