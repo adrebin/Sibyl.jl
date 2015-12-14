@@ -27,7 +27,7 @@ function getnewawsenv()
     if haskey(ENV,"AWS_ID")
         globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(id=ENV["AWS_ID"],key=ENV["AWS_SECKEY"]))
     else
-        globalenv.awsenv=Nullavle{AWSEnv}(AWSEnv(ec2_creds=true))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(ec2_creds=true))
     end
     return get(globalenv.awsenv)
 end
