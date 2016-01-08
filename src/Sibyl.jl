@@ -25,9 +25,9 @@ end
 function getnewawsenv()
     global globalenv::GlobalEnvironment
     if haskey(ENV,"AWS_ID")
-        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(id=ENV["AWS_ID"],key=ENV["AWS_SECKEY"]))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(id=ENV["AWS_ID"],key=ENV["AWS_SECKEY"],timeout=60))
     else
-        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(ec2_creds=true))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(ec2_creds=true,timeout=60))
     end
     return get(globalenv.awsenv)
 end
@@ -48,6 +48,96 @@ end
 function releases3connection()
     global globalenv::GlobalEnvironment
     Base.release(globalenv.s3connections)
+end
+
+function s3putobject(bucket,s3key,m)
+    trycount=0
+    acquires3connection()
+    while true
+        try
+            env=getawsenv()
+            resp=S3.put_object(env,bucket,s3key,ASCIIString(m))
+            if resp.http_code==200
+                releases3connection()
+                return
+            end
+        catch
+        end
+        if trycount>0
+            try
+                getnewawsenv()
+            catch
+            end
+            sleep(trycount)
+        end
+        trycount=trycount+1
+        if trycount>15
+            releases3connection()
+            error("s3putobject timed out.")
+        end
+    end 
+end
+
+function s3getobject(bucket,s3key)
+    trycount=0
+    acquires3connection()
+    while true
+        try
+            env=getawsenv()
+            resp=S3.get_object(env,bucket,s3key)
+            if resp.http_code==200
+                r=takebuf_array(resp.obj)
+                releases3connection()
+                return r
+            end
+            if resp.http_code==404
+                releases3connection()
+                return empty
+            end
+        catch
+        end
+        if trycount>0
+            try
+                getnewawsenv()
+            catch
+            end
+            sleep(trycount)
+        end
+        trycount=trycount+1
+        if trycount>15
+            releases3connection()
+            error("s3getobject timed out.")
+        end
+    end
+end
+
+function s3listobjects(bucket,prefix)
+    trycount=0
+    acquires3connection()
+    while true
+        try
+            env=getawsenv()
+            resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix))
+            if resp.http_code==200
+                r=[x.key for x in resp.obj.contents]
+                releases3connection()
+                return r
+            end
+        catch
+        end
+        if trycount>0
+            try
+                getnewawsenv()
+            catch
+            end
+            sleep(trycount)
+        end
+        trycount=trycount+1
+        if trycount>15
+            releases3connection()
+            error("s3listobjects timed out.")
+        end
+    end        
 end
 
 type Connection
@@ -189,47 +279,22 @@ function save(t::Transaction)
             timestamp=Base62.encode(asbytes(Int64(round(time()))))
             nonce=Base62.encode(hex2bytes(sha256(m)))
             s3key="$(s3prefix)/$(timestamp)/$(nonce)"
-            @async begin
-                acquires3connection()
-                env=getawsenv()
-                S3.put_object(env,t.connection.bucket,s3key,ASCIIString(m))
-                releases3connection()
-            end
+            @async s3putobject(t.connection.bucket,s3key,m)
         end
     end
-end
-
-function s3listobjects(connection,prefix)
-    acquires3connection()
-    env=getawsenv()
-    list=S3.get_bkt(env,connection.bucket,options=GetBucketOptions(prefix=prefix)).obj.contents
-    releases3connection()
-    r=[x.key for x in list]
-    return r
-end
-
-function s3getobject(connection,s3key)
-    acquires3connection()
-    env=getawsenv()
-    resp=S3.get_object(env,connection.bucket,s3key)
-    releases3connection()
-    if resp.http_code==200
-        return takebuf_array(resp.obj)
-    end
-    return empty
 end
 
 function readblock(connection::Connection,table::AbstractString,key::Bytes)
     objects=[(frombytes(Base62.decode(ASCIIString(split(x,"/")[5])),Int64)[1],
               split(x,"/")[6],x)
-             for x in s3listobjects(connection,s3keyprefix(connection.space,table,key))]
+             for x in s3listobjects(connection.bucket,s3keyprefix(connection.space,table,key))]
     sort!(objects)
     results=[]
     fetchindicies=Int[]
     for i=1:length(objects)
         push!(fetchindicies,i)
         r=Future()
-        @async put!(r,s3getobject(connection,objects[i][3]))
+        @async put!(r,s3getobject(connection.bucket,objects[i][3]))
         push!(results,r)
     end
     for i in fetchindicies
