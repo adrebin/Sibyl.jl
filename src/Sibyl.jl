@@ -111,6 +111,16 @@ function s3getobject(bucket,s3key)
     end
 end
 
+function s3deleteobject(bucket,s3key)
+    acquires3connection()
+    try
+        env=getawsenv()
+        S3.del_object(env,bucket,s3key)
+    catch
+    end
+    releases3connection()
+end
+
 function s3listobjects(bucket,prefix)
     trycount=0
     acquires3connection()
@@ -271,15 +281,19 @@ function s3keyprefix(space,table,key)
     return "$(space)/$(table)/$(hash)/$(Base62.encode(key))"
 end
 
+function saveblock(blocktransaction::BlockTransaction,connection,table,key)
+    s3prefix=s3keyprefix(connection.space,table,key)
+    m=message(blocktransaction)
+    timestamp=Base62.encode(asbytes(Int64(round(time()))))
+    nonce=Base62.encode(hex2bytes(sha256(m)))
+    s3key="$(s3prefix)/$(timestamp)/$(nonce)"
+    s3putobject(connection.bucket,s3key,m)
+end
+
 function save(t::Transaction)
     @sync for (table,blocktransactions) in t.tables
         for (key,blocktransaction) in blocktransactions
-            s3prefix=s3keyprefix(t.connection.space,table,key)
-            m=message(blocktransaction)
-            timestamp=Base62.encode(asbytes(Int64(round(time()))))
-            nonce=Base62.encode(hex2bytes(sha256(m)))
-            s3key="$(s3prefix)/$(timestamp)/$(nonce)"
-            @async s3putobject(t.connection.bucket,s3key,m)
+            @async saveblock(blocktransaction,t.connection,table,key)
         end
     end
 end
@@ -301,6 +315,19 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
     r=BlockTransaction()
     for result in results
         interpret!(r,result)
+    end
+    s3livekeys=UTF8String[]
+    @sync for x in objects
+        if x[3] in r.s3keystodelete
+            @async s3deleteobject(connection.bucket,x[3])
+        else
+            push!(s3livekeys,x[3])
+        end
+    end
+    compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
+    if rand()<compactprobability
+        newblock=BlockTransaction(r.data,r.deleted,s3livekeys)
+        saveblock(newblock,connection,table,key)
     end
     return r
 end
