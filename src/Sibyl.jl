@@ -290,14 +290,12 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
              for x in s3listobjects(connection.bucket,s3keyprefix(connection.space,table,key))]
     sort!(objects)
     results=[]
-    fetchindicies=Int[]
     for i=1:length(objects)
-        push!(fetchindicies,i)
-        r=Future()
-        @async put!(r,s3getobject(connection.bucket,objects[i][3]))
-        push!(results,r)
+        result=Future()
+        push!(results,result)
+        @async put!(result,s3getobject(connection.bucket,objects[i][3]))
     end
-    for i in fetchindicies
+    for i=1:length(objects)
         results[i]=fetch(results[i])
     end
     r=BlockTransaction()
@@ -310,9 +308,9 @@ end
 function loadblocks!(t::Transaction,tablekeys)
     results=[]
     for (table,key) in tablekeys
-        r=Future()
-        push!(results,r)
-        @async put!(r,readblock(t.connection,table,key))
+        result=Future()
+        push!(results,result)
+        @async put!(result,readblock(t.connection,table,key))
     end
     for i=1:length(tablekeys)
         if !haskey(t.tables,tablekeys[i][1])
