@@ -7,19 +7,26 @@ using AWS.S3
 
 include("base62.jl")
 
+
 export asbytes,frombytes
 export empty
 
 typealias Bytes Array{UInt8,1}
 const empty=Bytes()
 
+abstract SibylCache
+writecache(cache::SibylCache,key::UTF8String,expiry::Int,data::Bytes)=error("writecache not implemented")
+readcache(cache::SibylCache,key::UTF8String)=error("readcache not implemented")
+include("nocache.jl")
+
 type GlobalEnvironment
     awsenv::Nullable{AWSEnv}
     s3connections::Base.Semaphore
+    cache::SibylCache
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128))
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128),NoCache.Cache())
 end
 
 function getnewawsenv()
@@ -78,7 +85,7 @@ function s3putobject(bucket,s3key,m)
     end 
 end
 
-function s3getobject(bucket,s3key)
+function s3getobject1(bucket,s3key)
     trycount=0
     acquires3connection()
     while true
@@ -111,6 +118,17 @@ function s3getobject(bucket,s3key)
     end
 end
 
+function s3getobject(bucket,s3key)
+    cachekey="OBJ:$(bucket):$(s3key)"
+    cached=readcache(globalenv.cache,cachekey)
+    if !isnull(cached)
+        return get(cached)
+    end
+    value=s3getobject1(bucket,s3key)
+    writecache(globalenv.cache,cachekey,86400*32,value)
+    return value
+end
+
 function s3deleteobject(bucket,s3key)
     acquires3connection()
     try
@@ -121,7 +139,7 @@ function s3deleteobject(bucket,s3key)
     releases3connection()
 end
 
-function s3listobjects(bucket,prefix)
+function s3listobjects1(bucket,prefix)
     trycount=0
     acquires3connection()
     while true
@@ -150,6 +168,17 @@ function s3listobjects(bucket,prefix)
     end        
 end
 
+function s3listobjects(bucket,prefix)
+    cachekey="LIST:$(bucket):$(prefix)"
+    cached=readcache(globalenv.cache,cachekey)
+    if !isnull(cached)
+        return frombytes(get(cached),Array{UTF8String,1})
+    end
+    value=convert(Array{UTF8String,1},s3listobjects1(bucket,prefix))
+    writecache(globalenv.cache,cachekey,5*60,asbytes(value))
+    return value    
+end
+
 type Connection
     bucket::UTF8String
     space::UTF8String
@@ -167,6 +196,11 @@ function writebytes(io,xs...)
             b=takebuf_array(b)
             write(io,Int16(length(b)))
             write(io,b)
+        elseif typeof(x)==Array{UTF8String,1}
+            write(io,Int16(length(x)))
+            for e in x
+                writebytes(io,e)
+            end
         elseif typeof(x)<:Array
             b=reinterpret(UInt8,x)
             write(io,Int64(length(b)))
@@ -186,6 +220,13 @@ function readbytes(io,typs...)
             l=read(io,Int16)
             b=read(io,UInt8,l)
             push!(r,UTF8String(b))
+        elseif typ==Array{UTF8String,1}
+            l=read(io,Int16)
+            a=Array{UTF8String,1}()
+            for i=1:l
+                push!(a,readbytes(io,UTF8String))
+            end
+            push!(r,a)
         elseif typ<:Array
             l=read(io,Int64)
             b=read(io,UInt8,l)
