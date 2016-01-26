@@ -18,6 +18,7 @@ abstract SibylCache
 writecache(cache::SibylCache,key::UTF8String,expiry::Int,data::Bytes)=error("writecache not implemented")
 readcache(cache::SibylCache,key::UTF8String)=error("readcache not implemented")
 include("nocache.jl")
+include("sqlitecache.jl")
 
 type GlobalEnvironment
     awsenv::Nullable{AWSEnv}
@@ -26,7 +27,7 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128),NoCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128),SQLiteCache.Cache())
 end
 
 function getnewawsenv()
@@ -172,7 +173,7 @@ function s3listobjects(bucket,prefix)
     cachekey="LIST:$(bucket):$(prefix)"
     cached=readcache(globalenv.cache,cachekey)
     if !isnull(cached)
-        return frombytes(get(cached),Array{UTF8String,1})
+        return frombytes(get(cached),Array{UTF8String,1})[1]
     end
     value=convert(Array{UTF8String,1},s3listobjects1(bucket,prefix))
     writecache(globalenv.cache,cachekey,5*60,asbytes(value))
@@ -224,7 +225,7 @@ function readbytes(io,typs...)
             l=read(io,Int16)
             a=Array{UTF8String,1}()
             for i=1:l
-                push!(a,readbytes(io,UTF8String))
+                push!(a,readbytes(io,UTF8String)[1])
             end
             push!(r,a)
         elseif typ<:Array
@@ -358,6 +359,7 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
         interpret!(r,result)
     end
     s3livekeys=UTF8String[]
+    # Should only delete objects if we are reading say 10 minutes after the instructions
     @sync for x in objects
         if x[3] in r.s3keystodelete
             @async s3deleteobject(connection.bucket,x[3])
