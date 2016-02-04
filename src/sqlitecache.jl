@@ -44,6 +44,7 @@ end
 
 function readcache(cache::Cache,key::UTF8String)
     Base.acquire(cache.lock)
+    results=nothing
     try
         results=SQLite.query(cache.db,"SELECT expires,value FROM Cache where ky=?",[key])
     catch
