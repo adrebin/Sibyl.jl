@@ -27,7 +27,7 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128),SQLiteCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),SQLiteCache.Cache())
 end
 
 function getnewawsenv()
@@ -145,12 +145,21 @@ function s3listobjects1(bucket,prefix)
     acquires3connection()
     while true
         try
+            r=UTF8String[]
             env=getawsenv()
             resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix))
-            if resp.http_code==200
-                r=[x.key for x in resp.obj.contents]
-                releases3connection()
-                return r
+            while true
+                if resp.http_code!=200
+                    break
+                end
+                for x in resp.obj.contents
+                    push!(r,x.key)
+                end
+                if length(resp.obj.contents)<1000
+                    releases3connection()
+                    return r
+                end
+                resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix,marker=r[end]))
             end
         catch
         end
@@ -166,7 +175,7 @@ function s3listobjects1(bucket,prefix)
             releases3connection()
             error("s3listobjects timed out.")
         end
-    end        
+    end
 end
 
 function s3listobjects(bucket,prefix)
