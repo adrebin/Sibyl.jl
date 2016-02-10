@@ -349,7 +349,7 @@ function save(t::Transaction)
     end
 end
 
-function readblock(connection::Connection,table::AbstractString,key::Bytes)
+function readblock(connection::Connection,table::AbstractString,key::Bytes;forcecompact=false)
     objects=[(frombytes(Base62.decode(ASCIIString(split(x,"/")[5])),Int64)[1],
               split(x,"/")[6],x)
              for x in s3listobjects(connection.bucket,s3keyprefix(connection.space,table,key))]
@@ -377,6 +377,9 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
         end
     end
     compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
+    if (length(s3livekeys)>=2)&&(forcecompact)
+        compactprobability=1.0
+    end
     if rand()<compactprobability
         newblock=BlockTransaction(r.data,r.deleted,s3livekeys)
         saveblock(newblock,connection,table,key)
