@@ -2,11 +2,12 @@ module Sibyl
 
 using SHA
 using Zlib
-using AWS
-using AWS.S3
+import AWSCore
+import AWSS3
 
 include("base62.jl")
 
+AWSEnv=Dict
 
 export asbytes,frombytes
 export empty
@@ -17,6 +18,7 @@ const empty=Bytes()
 abstract SibylCache
 writecache(cache::SibylCache,key::UTF8String,expiry::Int,data::Bytes)=error("writecache not implemented")
 readcache(cache::SibylCache,key::UTF8String)=error("readcache not implemented")
+
 include("nocache.jl")
 include("sqlitecache.jl")
 
@@ -33,9 +35,9 @@ end
 function getnewawsenv()
     global globalenv::GlobalEnvironment
     if haskey(ENV,"AWS_ID")
-        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(id=ENV["AWS_ID"],key=ENV["AWS_SECKEY"],timeout=60))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config(creds=AWSCore.AWSCredentials(ENV["AWS_ID"],ENV["AWS_SECKEY"])))
     else
-        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(ec2_creds=true,timeout=60))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config())
     end
     return get(globalenv.awsenv)
 end
@@ -194,9 +196,6 @@ type Connection
     space::UTF8String
 end
 
-function Connection(bucket,space)
-    Connection(UTF8String(bucket),UTF8String(space))
-end
 
 function writebytes(io,xs...)
     for x in xs
