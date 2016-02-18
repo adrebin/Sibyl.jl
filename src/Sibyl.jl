@@ -143,28 +143,27 @@ function s3deleteobject(bucket,s3key)
 end
 
 function s3listobjects1(bucket,prefix)
+    println("s3listobjects1 $prefix")
     trycount=0
     acquires3connection()
     while true
-        try
-            r=UTF8String[]
+#        try
             env=getawsenv()
-            resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix))
+            r=UTF8String[]
             while true
-                if resp.http_code!=200
-                    break
+                q=Dict("prefix"=>prefix)
+                resp=AWSS3.s3(env,"GET",bucket;query=q)
+                for x in resp["Contents"]
+                    push!(r,x["Key"])
+                    q["marker"]=x["Key"]
                 end
-                for x in resp.obj.contents
-                    push!(r,x.key)
-                end
-                if length(resp.obj.contents)<1000
+                if resp["IsTruncated"]!="true"
                     releases3connection()
                     return r
                 end
-                resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix,marker=r[end]))
             end
-        catch
-        end
+#        catch
+#        end
         if trycount>0
             try
                 getnewawsenv()
@@ -187,6 +186,7 @@ function s3listobjects(bucket,prefix)
         return frombytes(get(cached),Array{UTF8String,1})[1]
     end
     value=convert(Array{UTF8String,1},s3listobjects1(bucket,prefix))
+    println("s3listobjects $prefix $value")
     writecache(globalenv.cache,cachekey,5*60,asbytes(value))
     return value    
 end
