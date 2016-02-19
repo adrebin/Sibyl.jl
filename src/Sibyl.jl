@@ -68,7 +68,8 @@ function s3putobject(bucket,s3key,m)
             env=getawsenv()
             AWSS3.s3_put(env,bucket,s3key,m)
             releases3connection()
-        catch
+            return
+        catch e
         end
         if trycount>0
             try
@@ -86,6 +87,7 @@ function s3putobject(bucket,s3key,m)
 end
 
 function s3getobject1(bucket,s3key)
+    println("s3getobject1 $s3key")
     trycount=0
     acquires3connection()
     while true
@@ -137,6 +139,7 @@ function s3deleteobject(bucket,s3key)
 end
 
 function s3listobjects1(bucket,prefix)
+    println("s3listobjects1 $prefix")
     trycount=0
     acquires3connection()
     while true
@@ -146,12 +149,20 @@ function s3listobjects1(bucket,prefix)
             while true
                 q=Dict("prefix"=>prefix)
                 resp=AWSS3.s3(env,"GET",bucket;query=q)
-                for x in resp["Contents"]
-                    push!(r,x["Key"])
-                    q["marker"]=x["Key"]
+                if haskey(resp,"Contents")
+                    if isa(resp["Contents"],Array)
+                        for x in resp["Contents"]
+                            push!(r,x["Key"])
+                            q["marker"]=x["Key"]
+                        end
+                    else
+                        push!(r,resp["Contents"]["Key"])
+                        q["marker"]=resp["Contents"]["Key"]
+                    end
                 end
                 if resp["IsTruncated"]!="true"
                     releases3connection()
+                    println(r)
                     return r
                 end
             end
