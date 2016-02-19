@@ -66,11 +66,8 @@ function s3putobject(bucket,s3key,m)
     while true
         try
             env=getawsenv()
-            resp=S3.put_object(env,bucket,s3key,ASCIIString(m))
-            if resp.http_code==200
-                releases3connection()
-                return
-            end
+            AWSS3.s3_put(env,bucket,s3key,m)
+            releases3connection()
         catch
         end
         if trycount>0
@@ -94,17 +91,14 @@ function s3getobject1(bucket,s3key)
     while true
         try
             env=getawsenv()
-            resp=S3.get_object(env,bucket,s3key)
-            if resp.http_code==200
-                r=takebuf_array(resp.obj)
-                releases3connection()
-                return r
-            end
-            if resp.http_code==404
+            r=AWSS3.s3_get(env,bucket,s3key)
+            releases3connection()
+            return r
+        catch e
+            if isa(e,AWSCore.NoSuchKey)
                 releases3connection()
                 return empty
             end
-        catch
         end
         if trycount>0
             try
@@ -136,18 +130,17 @@ function s3deleteobject(bucket,s3key)
     acquires3connection()
     try
         env=getawsenv()
-        S3.del_object(env,bucket,s3key)
+        AWSS3.s3_delete(env,bucket,s3key)
     catch
     end
     releases3connection()
 end
 
 function s3listobjects1(bucket,prefix)
-    println("s3listobjects1 $prefix")
     trycount=0
     acquires3connection()
     while true
-#        try
+        try
             env=getawsenv()
             r=UTF8String[]
             while true
@@ -162,8 +155,8 @@ function s3listobjects1(bucket,prefix)
                     return r
                 end
             end
-#        catch
-#        end
+        catch
+        end
         if trycount>0
             try
                 getnewawsenv()
@@ -186,7 +179,6 @@ function s3listobjects(bucket,prefix)
         return frombytes(get(cached),Array{UTF8String,1})[1]
     end
     value=convert(Array{UTF8String,1},s3listobjects1(bucket,prefix))
-    println("s3listobjects $prefix $value")
     writecache(globalenv.cache,cachekey,5*60,asbytes(value))
     return value    
 end
