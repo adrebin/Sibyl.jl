@@ -87,7 +87,6 @@ function s3putobject(bucket,s3key,m)
 end
 
 function s3getobject1(bucket,s3key)
-    println("s3getobject1 $s3key")
     trycount=0
     acquires3connection()
     while true
