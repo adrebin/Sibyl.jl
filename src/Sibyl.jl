@@ -2,11 +2,12 @@ module Sibyl
 
 using SHA
 using Zlib
-using AWS
-using AWS.S3
+import AWSCore
+import AWSS3
 
 include("base62.jl")
 
+AWSEnv=Dict
 
 export asbytes,frombytes
 export empty
@@ -17,6 +18,7 @@ const empty=Bytes()
 abstract SibylCache
 writecache(cache::SibylCache,key::UTF8String,expiry::Int,data::Bytes)=error("writecache not implemented")
 readcache(cache::SibylCache,key::UTF8String)=error("readcache not implemented")
+
 include("nocache.jl")
 include("sqlitecache.jl")
 
@@ -33,9 +35,9 @@ end
 function getnewawsenv()
     global globalenv::GlobalEnvironment
     if haskey(ENV,"AWS_ID")
-        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(id=ENV["AWS_ID"],key=ENV["AWS_SECKEY"],timeout=60))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config(creds=AWSCore.AWSCredentials(ENV["AWS_ID"],ENV["AWS_SECKEY"])))
     else
-        globalenv.awsenv=Nullable{AWSEnv}(AWSEnv(ec2_creds=true,timeout=60))
+        globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config())
     end
     return get(globalenv.awsenv)
 end
@@ -64,12 +66,10 @@ function s3putobject(bucket,s3key,m)
     while true
         try
             env=getawsenv()
-            resp=S3.put_object(env,bucket,s3key,ASCIIString(m))
-            if resp.http_code==200
-                releases3connection()
-                return
-            end
-        catch
+            AWSS3.s3_put(env,bucket,s3key,m)
+            releases3connection()
+            return
+        catch e
         end
         if trycount>0
             try
@@ -92,17 +92,14 @@ function s3getobject1(bucket,s3key)
     while true
         try
             env=getawsenv()
-            resp=S3.get_object(env,bucket,s3key)
-            if resp.http_code==200
-                r=takebuf_array(resp.obj)
-                releases3connection()
-                return r
-            end
-            if resp.http_code==404
+            r=AWSS3.s3_get(env,bucket,s3key)
+            releases3connection()
+            return r
+        catch e
+            if isa(e,AWSCore.NoSuchKey)
                 releases3connection()
                 return empty
             end
-        catch
         end
         if trycount>0
             try
@@ -134,7 +131,7 @@ function s3deleteobject(bucket,s3key)
     acquires3connection()
     try
         env=getawsenv()
-        S3.del_object(env,bucket,s3key)
+        AWSS3.s3_delete(env,bucket,s3key)
     catch
     end
     releases3connection()
@@ -145,21 +142,26 @@ function s3listobjects1(bucket,prefix)
     acquires3connection()
     while true
         try
-            r=UTF8String[]
             env=getawsenv()
-            resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix))
+            r=UTF8String[]
             while true
-                if resp.http_code!=200
-                    break
+                q=Dict("prefix"=>prefix)
+                resp=AWSS3.s3(env,"GET",bucket;query=q)
+                if haskey(resp,"Contents")
+                    if isa(resp["Contents"],Array)
+                        for x in resp["Contents"]
+                            push!(r,x["Key"])
+                            q["marker"]=x["Key"]
+                        end
+                    else
+                        push!(r,resp["Contents"]["Key"])
+                        q["marker"]=resp["Contents"]["Key"]
+                    end
                 end
-                for x in resp.obj.contents
-                    push!(r,x.key)
-                end
-                if length(resp.obj.contents)<1000
+                if resp["IsTruncated"]!="true"
                     releases3connection()
                     return r
                 end
-                resp=S3.get_bkt(env,bucket,options=GetBucketOptions(prefix=prefix,marker=r[end]))
             end
         catch
         end
@@ -194,9 +196,6 @@ type Connection
     space::UTF8String
 end
 
-function Connection(bucket,space)
-    Connection(UTF8String(bucket),UTF8String(space))
-end
 
 function writebytes(io,xs...)
     for x in xs
