@@ -139,7 +139,6 @@ function s3deleteobject(bucket,s3key)
 end
 
 function s3listobjects1(bucket,prefix)
-    println("s3listobjects1 $prefix")
     trycount=0
     acquires3connection()
     while true
@@ -162,7 +161,6 @@ function s3listobjects1(bucket,prefix)
                 end
                 if resp["IsTruncated"]!="true"
                     releases3connection()
-                    println(r)
                     return r
                 end
             end
