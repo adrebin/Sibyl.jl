@@ -349,7 +349,7 @@ function save(t::Transaction)
 end
 
 function readblock(connection::Connection,table::AbstractString,key::Bytes;forcecompact=false)
-    objects=[(frombytes(Base62.decode(ASCIIString(split(x,"/")[5])),Int64)[1],
+    objects=[(frombytes(Base62.decode(String(split(x,"/")[5])),Int64)[1],
               split(x,"/")[6],x)
              for x in s3listobjects(connection.bucket,s3keyprefix(connection.space,table,key))]
     sort!(objects)
