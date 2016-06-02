@@ -29,7 +29,7 @@ function Cache()
 
 end
 
-function writecache(cache::Cache,key::UTF8String,expiry::Int,data::Bytes)
+function writecache(cache::Cache,key::String,expiry::Int,data::Bytes)
     Base.acquire(cache.lock)
     try
         st=SQLite.Stmt(cache.db,"INSERT OR REPLACE INTO Cache (ky,expires,value) VALUES (?,?,?)")
@@ -42,7 +42,7 @@ function writecache(cache::Cache,key::UTF8String,expiry::Int,data::Bytes)
     Base.release(cache.lock)
 end
 
-function readcache(cache::Cache,key::UTF8String)
+function readcache(cache::Cache,key::String)
     Base.acquire(cache.lock)
     results=nothing
     try

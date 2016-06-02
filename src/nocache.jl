@@ -8,11 +8,11 @@ import ..readcache
 type Cache <: SibylCache
 end
 
-function writecache(cache::Cache,key::UTF8String,expiry::Int,data::Bytes)
+function writecache(cache::Cache,key::String,expiry::Int,data::Bytes)
 #    println("Write to NoCache $(key)")
 end
 
-function readcache(cache::Cache,key::UTF8String)
+function readcache(cache::Cache,key::String)
 #    println("Read from NoCache $(key)")
     return Nullable{Bytes}()
 end

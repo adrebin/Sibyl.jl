@@ -16,8 +16,8 @@ typealias Bytes Array{UInt8,1}
 const empty=Bytes()
 
 abstract SibylCache
-writecache(cache::SibylCache,key::UTF8String,expiry::Int,data::Bytes)=error("writecache not implemented")
-readcache(cache::SibylCache,key::UTF8String)=error("readcache not implemented")
+writecache(cache::SibylCache,key::String,expiry::Int,data::Bytes)=error("writecache not implemented")
+readcache(cache::SibylCache,key::String)=error("readcache not implemented")
 
 include("nocache.jl")
 include("sqlitecache.jl")
@@ -143,7 +143,7 @@ function s3listobjects1(bucket,prefix)
     while true
         try
             env=getawsenv()
-            r=UTF8String[]
+            r=String[]
             while true
                 q=Dict("prefix"=>prefix)
                 resp=AWSS3.s3(env,"GET",bucket;query=q)
@@ -184,16 +184,16 @@ function s3listobjects(bucket,prefix)
     cachekey="LIST:$(bucket):$(prefix)"
     cached=readcache(globalenv.cache,cachekey)
     if !isnull(cached)
-        return frombytes(get(cached),Array{UTF8String,1})[1]
+        return frombytes(get(cached),Array{String,1})[1]
     end
-    value=convert(Array{UTF8String,1},s3listobjects1(bucket,prefix))
+    value=convert(Array{String,1},s3listobjects1(bucket,prefix))
     writecache(globalenv.cache,cachekey,5*60,asbytes(value))
     return value    
 end
 
 type Connection
-    bucket::UTF8String
-    space::UTF8String
+    bucket::String
+    space::String
 end
 
 
@@ -201,11 +201,11 @@ function writebytes(io,xs...)
     for x in xs
         if typeof(x)<:AbstractString
             b=IOBuffer()
-            write(b,UTF8String(x))
+            write(b,String(x))
             b=takebuf_array(b)
             write(io,Int16(length(b)))
             write(io,b)
-        elseif typeof(x)==Array{UTF8String,1}
+        elseif typeof(x)==Array{String,1}
             write(io,Int16(length(x)))
             for e in x
                 writebytes(io,e)
@@ -225,15 +225,15 @@ frombytesarray{T}(data::Bytes,typ::Type{Array{T,1}})=reinterpret(T,data)
 function readbytes(io,typs...)
     r=[]
     for typ in typs
-        if typ==UTF8String
+        if typ==String
             l=read(io,Int16)
             b=read(io,UInt8,l)
-            push!(r,UTF8String(b))
-        elseif typ==Array{UTF8String,1}
+            push!(r,String(b))
+        elseif typ==Array{String,1}
             l=read(io,Int16)
-            a=Array{UTF8String,1}()
+            a=Array{String,1}()
             for i=1:l
-                push!(a,readbytes(io,UTF8String)[1])
+                push!(a,readbytes(io,String)[1])
             end
             push!(r,a)
         elseif typ<:Array
@@ -261,10 +261,10 @@ end
 type BlockTransaction
     data::Dict{Bytes,Bytes}
     deleted::Set{Bytes}
-    s3keystodelete::Array{UTF8String,1}
+    s3keystodelete::Array{String,1}
 end
 
-BlockTransaction()=BlockTransaction(Dict{Bytes,Bytes}(),Set{Bytes}(),Array{UTF8String,1}())
+BlockTransaction()=BlockTransaction(Dict{Bytes,Bytes}(),Set{Bytes}(),Array{String,1}())
 
 function upsert!(t::BlockTransaction,subkey::Bytes,value::Bytes)
     delete!(t.deleted,subkey)
@@ -305,16 +305,16 @@ function interpret!(t::BlockTransaction,message::Bytes)
     end
     n=readbytes(io,Int64)[1]
     for i=1:n
-        push!(t.s3keystodelete,readbytes(io,UTF8String)[1])
+        push!(t.s3keystodelete,readbytes(io,String)[1])
     end
 end
 
 type Transaction
     connection::Connection
-    tables::Dict{UTF8String,Dict{Bytes,BlockTransaction}}
+    tables::Dict{String,Dict{Bytes,BlockTransaction}}
 end
 
-Transaction(connection)=Transaction(connection,Dict{UTF8String,Dict{Bytes,BlockTransaction}}())
+Transaction(connection)=Transaction(connection,Dict{String,Dict{Bytes,BlockTransaction}}())
 
 function upsert!(t::Transaction,table::AbstractString,key::Bytes,subkey::Bytes,value::Bytes)
     if !(haskey(t.tables,table))
@@ -366,7 +366,7 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes;force
     for result in results
         interpret!(r,result)
     end
-    s3livekeys=UTF8String[]
+    s3livekeys=String[]
     # Should only delete objects if we are reading say 10 minutes after the instructions
     @sync for x in objects
         if x[3] in r.s3keystodelete
