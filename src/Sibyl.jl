@@ -29,7 +29,7 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),SQLiteCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),NoCache.Cache())
 end
 
 function getnewawsenv()
@@ -144,8 +144,8 @@ function s3listobjects1(bucket,prefix)
         try
             env=getawsenv()
             r=String[]
+            q=Dict("prefix"=>prefix)
             while true
-                q=Dict("prefix"=>prefix)
                 resp=AWSS3.s3(env,"GET",bucket;query=q)
                 if haskey(resp,"Contents")
                     if isa(resp["Contents"],Array)
