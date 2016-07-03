@@ -29,7 +29,9 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),NoCache.Cache())
+    #global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),NoCache.Cache())
+    #global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(16),NoCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(32),NoCache.Cache())
 end
 
 function getnewawsenv()
@@ -96,7 +98,10 @@ function s3getobject1(bucket,s3key)
             releases3connection()
             return r
         catch e
-            if isa(e,AWSCore.NoSuchKey)
+            println(fieldnames(e))
+            println(e.var)
+            println(e)
+            if e.code=="NoSuchKey"
                 releases3connection()
                 return empty
             end
