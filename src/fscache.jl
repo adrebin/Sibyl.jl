@@ -24,7 +24,6 @@ end
 
 function writecache(cache::Cache,key::String,data::Bytes)
     path=keytopath(cache,key)
-    println(path)
     dir=splitdir(path)[1]
     if !isdir(dir)
         mkpath(dir)

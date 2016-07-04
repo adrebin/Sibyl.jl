@@ -29,7 +29,7 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),FSCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(32),FSCache.Cache())
 end
 
 function getnewawsenv()
