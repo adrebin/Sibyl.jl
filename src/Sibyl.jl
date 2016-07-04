@@ -331,13 +331,25 @@ function s3keyprefix(space,table,key)
     return "$(space)/$(table)/$(hash)/$(Base62.encode(key))"
 end
 
+function touchmtimes(bucket,s3key)
+    s=split(s3key,'/')
+    space=s[1]
+    table=s[2]
+    hash=s[3]
+    m=asbytes(Int64(round(time())))
+    for i=0:4
+        @async s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
+    end
+end
+
 function saveblock(blocktransaction::BlockTransaction,connection,table,key)
     s3prefix=s3keyprefix(connection.space,table,key)
     m=message(blocktransaction)
     timestamp=Base62.encode(asbytes(Int64(round(time()))))
     nonce=Base62.encode(hex2bytes(sha256(m)))
     s3key="$(s3prefix)/$(timestamp)/$(nonce)"
-    s3putobject(connection.bucket,s3key,m)
+    @async s3putobject(connection.bucket,s3key,m)
+    touchmtimes(connection.bucket,s3key)
 end
 
 function save(t::Transaction)
@@ -371,6 +383,7 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes;force
     @sync for x in objects
         if x[3] in r.s3keystodelete
             @async s3deleteobject(connection.bucket,x[3])
+            touchmtimes(connection.bucket,x[3])
         else
             push!(s3livekeys,x[3])
         end
