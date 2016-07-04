@@ -20,6 +20,7 @@ writecache(cache::SibylCache,key::String,data::Bytes)=error("writecache not impl
 readcache(cache::SibylCache,key::String)=error("readcache not implemented")
 
 include("nocache.jl")
+include("fscache.jl")
 
 type GlobalEnvironment
     awsenv::Nullable{AWSEnv}
@@ -28,7 +29,7 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),NoCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(1024),FSCache.Cache())
 end
 
 function getnewawsenv()
@@ -119,7 +120,7 @@ function s3getobject(bucket,s3key)
     cachekey="OBJ:$(bucket):$(s3key)"
     cached=readcache(globalenv.cache,cachekey)
     if !isnull(cached)
-        return get(cached)
+        return get(cached)[2]
     end
     value=s3getobject1(bucket,s3key)
     writecache(globalenv.cache,cachekey,value)
@@ -183,7 +184,9 @@ function s3listobjects(bucket,prefix)
     cachekey="LIST:$(bucket):$(prefix)"
     cached=readcache(globalenv.cache,cachekey)
     if !isnull(cached)
-        return frombytes(get(cached),Array{String,1})[1]
+        if get(cached)[1]<time()+5*60
+            return frombytes(get(cached)[2],Array{String,1})[1]
+        end
     end
     value=convert(Array{String,1},s3listobjects1(bucket,prefix))
     writecache(globalenv.cache,cachekey,asbytes(value))
