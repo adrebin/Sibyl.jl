@@ -16,11 +16,10 @@ typealias Bytes Array{UInt8,1}
 const empty=Bytes()
 
 abstract SibylCache
-writecache(cache::SibylCache,key::String,expiry::Int,data::Bytes)=error("writecache not implemented")
+writecache(cache::SibylCache,key::String,data::Bytes)=error("writecache not implemented")
 readcache(cache::SibylCache,key::String)=error("readcache not implemented")
 
 include("nocache.jl")
-include("sqlitecache.jl")
 
 type GlobalEnvironment
     awsenv::Nullable{AWSEnv}
@@ -123,7 +122,7 @@ function s3getobject(bucket,s3key)
         return get(cached)
     end
     value=s3getobject1(bucket,s3key)
-    writecache(globalenv.cache,cachekey,86400*32,value)
+    writecache(globalenv.cache,cachekey,value)
     return value
 end
 
@@ -187,7 +186,7 @@ function s3listobjects(bucket,prefix)
         return frombytes(get(cached),Array{String,1})[1]
     end
     value=convert(Array{String,1},s3listobjects1(bucket,prefix))
-    writecache(globalenv.cache,cachekey,5*60,asbytes(value))
+    writecache(globalenv.cache,cachekey,asbytes(value))
     return value    
 end
 
