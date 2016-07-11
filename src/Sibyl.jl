@@ -29,7 +29,7 @@ type GlobalEnvironment
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(32),FSCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128),FSCache.Cache())
 end
 
 function getnewawsenv()
@@ -184,7 +184,7 @@ function s3listobjects(bucket,prefix)
     cachekey="LIST:$(bucket):$(prefix)"
     cached=readcache(globalenv.cache,cachekey)
     if !isnull(cached)
-        if get(cached)[1]<time()+5*60
+        if get(cached)[1]+5*60>time()
             return frombytes(get(cached)[2],Array{String,1})[1]
         end
     end
