@@ -340,7 +340,7 @@ function touchmtimes(bucket,s3key)
     hash=s[3]
     m=asbytes(Int64(round(time())))
     for i=0:4
-        @async s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
+        s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
     end
 end
 
