@@ -26,10 +26,14 @@ type GlobalEnvironment
     awsenv::Nullable{AWSEnv}
     s3connections::Base.Semaphore
     cache::SibylCache
+    mtimes::Dict{Tuple{String,String},Tuple{Int,Int}}
 end
 
 function __init__()
-    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),Base.Semaphore(128),FSCache.Cache())
+    global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),
+                                             Base.Semaphore(128),
+                                             FSCache.Cache(),
+                                             Dict{Tuple{String,String},Tuple{Int,Int}}())
 end
 
 function getnewawsenv()
@@ -180,11 +184,41 @@ function s3listobjects1(bucket,prefix)
     end
 end
 
+function touchmtimes(bucket,s3key)
+    s=split(s3key,'/')
+    space=s[1]
+    table=s[2]
+    hash=s[3]
+    m=asbytes(Int64(round(time())))
+    for i=0:4
+        s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
+    end
+end
+
+function getmtime(bucket,s3prefix)
+    s=split(s3prefix,"/")
+    space=s[1]
+    table=s[2]
+    hash=s[3]
+    if haskey(globalenv.mtimes,(space,table))
+        if globalenv.mtimes[(space,table)][1]+60>time()
+            return globalenv.mtimes[(space,table)][2]
+        end
+    end
+    val=try
+        frombytes(s3getobject1(bucket,join([space,table,"mtime",""],'/')),Int64)[1]
+    catch
+        Int64(0)
+    end
+    globalenv.mtimes[(space,table)]=(Int64(round(time())),val)
+    return val
+end
+
 function s3listobjects(bucket,prefix)
     cachekey="LIST:$(bucket):$(prefix)"
     cached=readcache(globalenv.cache,cachekey)
     if !isnull(cached)
-        if get(cached)[1]+5*60>time()
+        if get(cached)[1]>getmtime(bucket,prefix)
             return frombytes(get(cached)[2],Array{String,1})[1]
         end
     end
@@ -331,17 +365,6 @@ end
 function s3keyprefix(space,table,key)
     hash=sha256(key)[1:4]
     return "$(space)/$(table)/$(hash)/$(Base62.encode(key))"
-end
-
-function touchmtimes(bucket,s3key)
-    s=split(s3key,'/')
-    space=s[1]
-    table=s[2]
-    hash=s[3]
-    m=asbytes(Int64(round(time())))
-    for i=0:4
-        s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
-    end
 end
 
 function saveblock(blocktransaction::BlockTransaction,connection,table,key)
