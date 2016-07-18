@@ -408,7 +408,7 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes;force
     @sync for x in objects
         if x[3] in r.s3keystodelete
             @async s3deleteobject(connection.bucket,x[3])
-            touchmtimes(connection.bucket,x[3])
+            @async touchmtimes(connection.bucket,x[3])
         else
             push!(s3livekeys,x[3])
         end
@@ -436,6 +436,61 @@ function loadblocks!(t::Transaction,tablekeys)
             t.tables[tablekeys[i][1]]=Dict{Bytes,BlockTransaction}()
         end
         t.tables[tablekeys[i][1]][tablekeys[i][2]]=fetch(results[i])
+    end
+end
+
+function compact(bucket,space;table="",marker="")
+    globalenv.cache=NoCache.Cache()
+    globalenv.s3connections=Base.Semaphore(512)
+    connection=Connection(bucket,space)
+    env=getawsenv()
+    prefix=if table==""
+        "$(space)/"
+    else
+        "$(space)/$(table)/"
+    end
+    q=Dict("prefix"=>prefix)
+    if marker!=""
+        q["marker"]=marker
+    end
+    r=String[]
+    resp=AWSS3.s3(env,"GET",bucket;query=q)
+    if haskey(resp,"Contents")
+        if isa(resp["Contents"],Array)
+            for x in resp["Contents"]
+                push!(r,x["Key"])
+            end
+        else
+            push!(r,resp["Contents"]["Key"])
+        end
+    end
+    K=[]
+    for x in r
+        try
+            s=split(x,"/")
+            if s[3]!="mtime"
+                push!(K,(s[2],Base62.decode(s[4])))
+            end
+        catch
+        end
+    end
+    @sync while length(K)>0
+        k=shift!(K)
+        cnt=1
+        while (length(K)>0)&&(k==K[1])
+            shift!(K)
+            cnt=cnt+1
+        end
+        if cnt>1
+            println("$(space) $(k[1]) /$(Base62.encode(k[2]))/ $(cnt)")
+            @async readblock(connection,k[1],k[2],forcecompact=true)
+        end
+    end
+    if length(r)==1000
+        println(r[end])
+        return r[end]
+    else
+        return ""
     end
 end
 
