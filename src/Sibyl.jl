@@ -27,13 +27,15 @@ type GlobalEnvironment
     s3connections::Base.Semaphore
     cache::SibylCache
     mtimes::Dict{Tuple{String,String},Tuple{Int,Int}}
+    forcecompact::Bool
 end
 
 function __init__()
     global const globalenv=GlobalEnvironment(Nullable{AWSEnv}(),
                                              Base.Semaphore(128),
                                              FSCache.Cache(),
-                                             Dict{Tuple{String,String},Tuple{Int,Int}}())
+                                             Dict{Tuple{String,String},Tuple{Int,Int}}(),
+                                             false)
 end
 
 function getnewawsenv()
@@ -385,7 +387,7 @@ function save(t::Transaction)
     end
 end
 
-function readblock(connection::Connection,table::AbstractString,key::Bytes;forcecompact=false)
+function readblock(connection::Connection,table::AbstractString,key::Bytes)
     objects=[(frombytes(Base62.decode(String(split(x,"/")[5])),Int64)[1],
               split(x,"/")[6],x)
              for x in s3listobjects(connection.bucket,s3keyprefix(connection.space,table,key))]
@@ -414,7 +416,7 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes;force
         end
     end
     compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
-    if (length(s3livekeys)>=2)&&(forcecompact)
+    if (length(s3livekeys)>=2)&&(globalenv.forcecompact)
         compactprobability=1.0
     end
     if rand()<compactprobability
@@ -442,6 +444,7 @@ end
 function compact(bucket,space;table="",marker="")
     globalenv.cache=NoCache.Cache()
     globalenv.s3connections=Base.Semaphore(512)
+    globalenv.forcecompact=true
     connection=Connection(bucket,space)
     env=getawsenv()
     prefix=if table==""
@@ -483,7 +486,7 @@ function compact(bucket,space;table="",marker="")
         end
         if cnt>1
             println("$(space) $(k[1]) /$(Base62.encode(k[2]))/ $(cnt)")
-            @async readblock(connection,k[1],k[2],forcecompact=true)
+            @async readblock(connection,k[1],k[2])
         end
     end
     if length(r)==1000
