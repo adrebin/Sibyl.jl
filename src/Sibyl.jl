@@ -39,7 +39,7 @@ function __init__()
 end
 
 function getnewawsenv()
-    global globalenv::GlobalEnvironment
+    global globalenv
     if haskey(ENV,"AWS_ID")
         globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config(creds=AWSCore.AWSCredentials(ENV["AWS_ID"],ENV["AWS_SECKEY"])))
     else
@@ -49,7 +49,7 @@ function getnewawsenv()
 end
 
 function getawsenv()
-    global globalenv::GlobalEnvironment
+    global globalenv
     if isnull(globalenv.awsenv)
         return getnewawsenv()
     end
@@ -57,12 +57,12 @@ function getawsenv()
 end
 
 function acquires3connection()
-    global globalenv::GlobalEnvironment
+    global globalenv
     Base.acquire(globalenv.s3connections)
 end
 
 function releases3connection()
-    global globalenv::GlobalEnvironment
+    global globalenv
     Base.release(globalenv.s3connections)
 end
 
