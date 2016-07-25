@@ -18,7 +18,7 @@ function Cache()
 end
 
 function keytopath(cache::Cache,key::String)
-    h=sha256(key)
+    h=bytes2hex(sha256(key))
     join([cache.basepath,h[1:2],h[1:4],h],"/")
 end
 
@@ -41,7 +41,7 @@ function readcache(cache::Cache,key::String)
     if isfile(path)
         f=open(path)
         ctime=read(f,Int64)
-        h=String(read(f,64))
+        h=read(f,UInt8,32)
         data=read(f)
         close(f)
         if h==sha256(data)
