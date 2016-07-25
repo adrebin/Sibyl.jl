@@ -365,7 +365,7 @@ function upsert!(t::Transaction,table::AbstractString,key::Bytes,subkey::Bytes,v
 end
 
 function s3keyprefix(space,table,key)
-    hash=sha256(key)[1:4]
+    hash=bytes2hex(sha256(key))[1:4]
     return "$(space)/$(table)/$(hash)/$(Base62.encode(key))"
 end
 
@@ -373,7 +373,7 @@ function saveblock(blocktransaction::BlockTransaction,connection,table,key)
     s3prefix=s3keyprefix(connection.space,table,key)
     m=message(blocktransaction)
     timestamp=Base62.encode(asbytes(Int64(round(time()))))
-    nonce=Base62.encode(hex2bytes(sha256(m)))
+    nonce=Base62.encode(sha256(m))
     s3key="$(s3prefix)/$(timestamp)/$(nonce)"
     @async s3putobject(connection.bucket,s3key,m)
     touchmtimes(connection.bucket,s3key)
