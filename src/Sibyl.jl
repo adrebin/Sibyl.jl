@@ -486,7 +486,9 @@ function compact(bucket,space;table="",marker="")
         end
         if cnt>1
             println("$(space) $(k[1]) /$(Base62.encode(k[2]))/ $(cnt)")
-            @async readblock(connection,k[1],k[2])
+            let k=k
+                @async readblock(connection,k[1],k[2])
+            end
         end
     end
     if length(r)==1000
