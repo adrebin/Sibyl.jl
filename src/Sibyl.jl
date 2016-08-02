@@ -193,7 +193,7 @@ function touchmtimes(bucket,s3key)
     hash=s[3]
     m=asbytes(Int64(round(time())))
     for i=0:4
-        s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
+        @async s3putobject(bucket,join([space,table,"mtime",hash[1:i]],'/'),m)
     end
 end
 
@@ -382,7 +382,7 @@ end
 function save(t::Transaction)
     @sync for (table,blocktransactions) in t.tables
         for (key,blocktransaction) in blocktransactions
-            @async saveblock(blocktransaction,t.connection,table,key)
+            saveblock(blocktransaction,t.connection,table,key)
         end
     end
 end
@@ -410,7 +410,7 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
     @sync for x in objects
         if x[3] in r.s3keystodelete
             @async s3deleteobject(connection.bucket,x[3])
-            @async touchmtimes(connection.bucket,x[3])
+            touchmtimes(connection.bucket,x[3])
         else
             push!(s3livekeys,x[3])
         end
