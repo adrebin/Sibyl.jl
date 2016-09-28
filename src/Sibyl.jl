@@ -5,6 +5,10 @@ using Zlib
 import AWSCore
 import AWSS3
 
+import Base.keys
+import Base.haskey
+import Base.getindex
+
 include("base62.jl")
 
 AWSEnv=Dict
@@ -302,6 +306,11 @@ type BlockTransaction
     s3keystodelete::Array{String,1}
 end
 
+keys(t::BlockTransaction)=keys(t.data)
+haskey(t::BlockTransaction,k)=haskey(t.data,k)
+getindex(t::BlockTransaction,k)=getindex(t.data,k)
+
+
 BlockTransaction()=BlockTransaction(Dict{Bytes,Bytes}(),Set{Bytes}(),Array{String,1}())
 
 function upsert!(t::BlockTransaction,subkey::Bytes,value::Bytes)
@@ -351,6 +360,10 @@ type Transaction
     connection::Connection
     tables::Dict{String,Dict{Bytes,BlockTransaction}}
 end
+
+keys(t::Transaction)=keys(t.tables)
+haskey(t::Transaction,k)=haskey(t.tables,k)
+getindex(t::Transaction,k)=getindex(t.tables,k)
 
 Transaction(connection)=Transaction(connection,Dict{String,Dict{Bytes,BlockTransaction}}())
 
