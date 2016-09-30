@@ -11,7 +11,7 @@ import Base.getindex
 
 include("base62.jl")
 
-AWSEnv=Dict
+typealias AWSEnv Dict
 
 export asbytes,frombytes
 export empty
@@ -40,15 +40,26 @@ function __init__()
                                              FSCache.Cache(),
                                              Dict{Tuple{String,String},Tuple{Int,Int}}(),
                                              false)
+    global makeawsenv=defaultmakeawsenv
 end
+
+function setmakeawsenv(f)
+    global makeawsenv
+    makeawsenv=f
+end
+
+function defaultmakeawsenv()
+    if haskey(ENV,"AWS_ID")
+        Nullable{AWSEnv}(AWSCore.aws_config(creds=AWSCore.AWSCredentials(ENV["AWS_ID"],ENV["AWS_SECKEY"])))
+    else
+        Nullable{AWSEnv}(AWSCore.aws_config())
+    end
+end
+
 
 function getnewawsenv()
     global globalenv
-    if haskey(ENV,"AWS_ID")
-        globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config(creds=AWSCore.AWSCredentials(ENV["AWS_ID"],ENV["AWS_SECKEY"])))
-    else
-        globalenv.awsenv=Nullable{AWSEnv}(AWSCore.aws_config())
-    end
+    globalenv.awsenv=makeawsenv()
     return get(globalenv.awsenv)
 end
 
