@@ -1,7 +1,7 @@
 module Sibyl
 
 using SHA
-using Zlib
+using Libz
 import AWSCore
 import AWSS3
 
@@ -344,14 +344,14 @@ function message(t::BlockTransaction)
         writebytes(io,s)
     end
     r=takebuf_array(io)
-    return Zlib.compress(r,9)
+    return Libz.deflate(r)
 end
 
 function interpret!(t::BlockTransaction,message::Bytes)
     if length(message)==0
         return
     end
-    io=IOBuffer(Zlib.decompress(message))
+    io=IOBuffer(Libz.inflate(message))
     n=readbytes(io,Int64)[1]
     for i=1:n
         x=readbytes(io,Bytes,Bytes)
