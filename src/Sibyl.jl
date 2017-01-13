@@ -258,7 +258,7 @@ function writebytes(io,xs...)
             b=takebuf_array(b)
             write(io,Int16(length(b)))
             write(io,b)
-        elseif typeof(x)==Array{String,1}
+        elseif typeof(x) in [Array{String,1},Array{Array{UInt8,1},1}]
             write(io,Int16(length(x)))
             for e in x
                 writebytes(io,e)
@@ -287,6 +287,13 @@ function readbytes(io,typs...)
             a=Array{String,1}()
             for i=1:l
                 push!(a,readbytes(io,String)[1])
+            end
+            push!(r,a)
+        elseif typ==Array{Array{UInt8,1},1}
+            l=read(io,Int16)
+            a=Array{UInt8,1}[]
+            for i=1:l
+                push!(a,readbytes(io,Array{UInt8,1})[1])
             end
             push!(r,a)
         elseif typ<:Array
