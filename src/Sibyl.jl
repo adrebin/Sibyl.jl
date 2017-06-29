@@ -446,14 +446,14 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
             push!(s3livekeys,x[3])
         end
     end
-    compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
-    if (length(s3livekeys)>=2)&&(globalenv.forcecompact)
-        compactprobability=1.0
-    end
-    if rand()<compactprobability
-        newblock=BlockTransaction(r.data,r.deleted,s3livekeys)
-        saveblock(newblock,connection,table,key)
-    end
+    # compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
+    # if (length(s3livekeys)>=2)&&(globalenv.forcecompact)
+    #     compactprobability=1.0
+    # end
+    # if rand()<compactprobability
+    #     newblock=BlockTransaction(r.data,r.deleted,s3livekeys)
+    #     saveblock(newblock,connection,table,key)
+    # end
     return r
 end
 
