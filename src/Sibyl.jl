@@ -2,6 +2,7 @@ module Sibyl
 
 using SHA
 using Libz
+using AMPSBase
 import AWSCore
 import AWSS3
 
@@ -91,6 +92,7 @@ function s3putobject(bucket,s3key,m)
             releases3connection()
             return
         catch e
+            @logwarn "s3putobject -- $(e)"
         end
         if trycount>0
             try
