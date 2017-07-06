@@ -2,7 +2,7 @@ module Sibyl
 
 using SHA
 using Libz
-using AMPSBase
+using AMPSBase.Log
 import AWSCore
 import AWSS3
 
