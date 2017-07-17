@@ -227,7 +227,7 @@ function getmtime(bucket,s3prefix)
             return globalenv.mtimes[(space,table)][2]
         end
     end
-    Base.aquire(globalenv.mtimelock)
+    Base.acquire(globalenv.mtimelock)
     if haskey(globalenv.mtimes,(space,table))
         if globalenv.mtimes[(space,table)][1]+60>time()
             Base.release(globalenv.mtimelock)
