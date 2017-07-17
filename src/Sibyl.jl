@@ -33,6 +33,7 @@ type GlobalEnvironment
     cache::SibylCache
     mtimes::Dict{Tuple{String,String},Tuple{Int,Int}}
     forcecompact::Bool
+    mtimelock::Base.Semaphore
 end
 
 function __init__()
@@ -40,7 +41,8 @@ function __init__()
                                              Base.Semaphore(128),
                                              FSCache.Cache(),
                                              Dict{Tuple{String,String},Tuple{Int,Int}}(),
-                                             false)
+                                             false,
+                                             Base.Semaphore(1))
     global makeawsenv=defaultmakeawsenv
 end
 
@@ -215,6 +217,7 @@ function touchmtimes(bucket,s3key)
 end
 
 function getmtime(bucket,s3prefix)
+    global globalenv
     s=split(s3prefix,"/")
     space=s[1]
     table=s[2]
@@ -224,12 +227,20 @@ function getmtime(bucket,s3prefix)
             return globalenv.mtimes[(space,table)][2]
         end
     end
+    Base.aquire(globalenv.mtimelock)
+    if haskey(globalenv.mtimes,(space,table))
+        if globalenv.mtimes[(space,table)][1]+60>time()
+            Base.release(globalenv.mtimelock)
+            return globalenv.mtimes[(space,table)][2]
+        end
+    end
     val=try
         frombytes(s3getobject1(bucket,join([space,table,"mtime",""],'/')),Int64)[1]
     catch
         Int64(0)
     end
     globalenv.mtimes[(space,table)]=(Int64(round(time())),val)
+    Base.release(globalenv.mtimelock)
     return val
 end
 
