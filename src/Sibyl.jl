@@ -334,7 +334,7 @@ end
 type BlockTransaction
     data::Dict{Bytes,Bytes}
     deleted::Set{Bytes}
-    s3keystodelete::Array{String,1}
+    s3keystodelete::Set{String}
 end
 
 keys(t::BlockTransaction)=keys(t.data)
@@ -342,7 +342,7 @@ haskey(t::BlockTransaction,k)=haskey(t.data,k)
 getindex(t::BlockTransaction,k)=getindex(t.data,k)
 
 
-BlockTransaction()=BlockTransaction(Dict{Bytes,Bytes}(),Set{Bytes}(),Array{String,1}())
+BlockTransaction()=BlockTransaction(Dict{Bytes,Bytes}(),Set{Bytes}(),Set{String}())
 
 function upsert!(t::BlockTransaction,subkey::Bytes,value::Bytes)
     delete!(t.deleted,subkey)
@@ -459,14 +459,14 @@ function readblock(connection::Connection,table::AbstractString,key::Bytes)
             push!(s3livekeys,x[3])
         end
     end
-    # compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
-    # if (length(s3livekeys)>=2)&&(globalenv.forcecompact)
-    #     compactprobability=1.0
-    # end
-    # if rand()<compactprobability
-    #     newblock=BlockTransaction(r.data,r.deleted,s3livekeys)
-    #     saveblock(newblock,connection,table,key)
-    # end
+    compactprobability=(length(s3livekeys)-1)/(length(s3livekeys)+100)
+    if (length(s3livekeys)>=2)&&(globalenv.forcecompact)
+        compactprobability=1.0
+    end
+    if rand()<compactprobability
+        newblock=BlockTransaction(r.data,r.deleted,Set(s3livekeys))
+        saveblock(newblock,connection,table,key)
+    end
     return r
 end
 
